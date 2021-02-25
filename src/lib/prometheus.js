@@ -1,6 +1,7 @@
 const { register } = require('prom-client');
 const promClient = require('prom-client');
 
+const gauges = {};
 
 module.exports = {
   startCollection: () =>{
@@ -15,7 +16,19 @@ module.exports = {
     });
   },
 
-
+  nodesGauge: (network, type) => {
+    const gaugeName = `${network.toLowerCase()}_${type}_nodes`;
+    if (gauges[gaugeName]) {
+      return gauges[gaugeName];
+    } else {
+      gauges[gaugeName] = new promClient.Gauge({
+        name: gaugeName,
+        help: `Total number of ${type} nodes available on the ${network} network`
+      });
+      return gauges[gaugeName];
+    }
+  },
+/*
   timeToFinality: new promClient.Histogram({
     name: 'polkadot_block_finality_seconds',
     help: 'Time from block production to block finalized',
@@ -42,4 +55,5 @@ module.exports = {
     help: 'Time to receive a block as reported by telemetry',
     labelNames: ['node']
   }),
+*/
 }

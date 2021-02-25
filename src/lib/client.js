@@ -5,7 +5,8 @@ const { timeToFinality,
         bestBlock,
         bestFinalized,
         blockProductionTime,
-        blockPropagationTime
+        blockPropagationTime,
+        nodesGauge
       } = require('./prometheus');
 
 const Actions = {
@@ -33,9 +34,12 @@ const Actions = {
 
 const DEFAULT_TELEMETRY_HOST = 'ws://localhost:8000/feed';
 
+
 class Client {
   constructor(cfg) {
     this.cfg = cfg;
+
+    this.currentSubscribedNetwork = "";
 
     const options = {
       WebSocket: WS, // custom WebSocket constructor
@@ -81,10 +85,12 @@ class Client {
   _deserialize(msg) {
     const data = JSON.parse(msg.data);
 
+    //console.log(`JSON data ${JSON.stringify(data)}`);
+
     const messages = new Array(data.length / 2);
 
     for (const index of messages.keys()) {
-      const [ action, payload] = data.slice(index * 2);
+      const [action, payload] = data.slice(index * 2);
 
       messages[index] = { action, payload };
     }
@@ -95,6 +101,14 @@ class Client {
     const { action, payload } = message;
 
     switch(action) {
+
+    case Actions.SubscribedTo:
+      {
+        const network = payload;
+        this.currentSubscribedNetwork = network;
+        console.log(`Listening for network ${network}`);
+      }
+      break;
     case Actions.AddedChain:
       {
         const chain = payload[0];
@@ -107,9 +121,17 @@ class Client {
         const nodeID = payload[0];
         const nodeName = payload[1][0];
 
-        this.nodes[nodeID] = nodeName;
+        const nodeIdent = `${this.currentSubscribedNetwork}_${nodeID}`
 
-        console.log(`New node ${nodeName} (${nodeID})`);
+        if (!this.nodes[nodeIdent]) {
+          nodesGauge(this.currentSubscribedNetwork, 'validator').inc();
+          this.nodes[nodeIdent] = {
+            network: this.currentSubscribedNetwork,
+            name: nodeName
+          };
+        }
+
+        console.log(`New node ${nodeName} (${nodeIdent})`);
       }
       break;
 
@@ -118,12 +140,19 @@ class Client {
         const nodeID = payload;
         const nodeName = this.nodes[nodeID];
 
-        delete this.nodes[nodeID];
+        const nodeIdent = `${this.currentSubscribedNetwork}_${nodeID}`
 
-        console.log(`Node '${nodeName}' departed`);
+        console.log(`Removed Node Payload: ${JSON.stringify(payload)}`);
+
+        if (this.nodes[nodeIdent]) {
+          nodesGauge(this.currentSubscribedNetwork, 'validator').dec();
+          delete this.nodes[nodeIdent];
+        }
+
+        console.log(`Node '${nodeIdent}' '${nodeName} departed`);
       }
       break;
-
+/*
     case Actions.BestBlock:
       {
         const blockNumber = payload[0];
@@ -179,27 +208,8 @@ class Client {
         console.log(`New best finalized block ${blockNumber}`)
       }
       break;
+*/
     }
-  }
-
-  _watchedValidatorName(address) {
-    if(!this.cfg.subscribe ||
-       !this.cfg.subscribe.validators ||
-       this.cfg.subscribe.validators.length === 0) {
-      return "";
-    }
-    let name = "";
-    this.cfg.subscribe.validators.forEach((validator) => {
-      if(address === validator.address) {
-        name = validator.name;
-        return;
-      }
-    })
-    return name;
-  }
-
-  _extractAddressFromAfgPayload(payload) {
-    return payload[3].replace(/"/g, '');
   }
 
   _subscribe(chain) {
