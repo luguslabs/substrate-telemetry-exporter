@@ -1,6 +1,11 @@
+telemetry_host: ws://xxxxx:8000/feed
 subscribe:
   chains:
-  - Development
-  validators:
-  - name: node0
-    address: 5D5HUyyooRU3DQKKVXQgvzuMzwdJBks5kwZHvaMgoC6PWgsa
+  - Polkadot
+  - Kusama
+polkadot:
+  active_node_pattern: validator
+  passive_node_pattern: passive
+kusama:
+  active_node_pattern: KUSAMAPROPHET
+  passive_node_pattern: passive

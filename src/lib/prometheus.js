@@ -6,7 +6,7 @@ const gauges = {};
 module.exports = {
   startCollection: () =>{
     console.log('Starting the collection of metrics, the metrics are available on /metrics');
-    promClient.collectDefaultMetrics();
+    //promClient.collectDefaultMetrics();
   },
 
   injectMetricsRoute: (app) => {

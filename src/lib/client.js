@@ -1,12 +1,13 @@
 const ReconnectingWebSocket = require('reconnecting-websocket');
 const WS = require('ws');
 
-const { timeToFinality,
-        bestBlock,
-        bestFinalized,
-        blockProductionTime,
-        blockPropagationTime,
-        nodesGauge
+const { 
+        nodesGauge,
+      //  timeToFinality,
+      //  bestBlock,
+      //  bestFinalized,
+      //  blockProductionTime,
+      //  blockPropagationTime,
       } = require('./prometheus');
 
 const Actions = {
@@ -34,7 +35,6 @@ const Actions = {
 
 const DEFAULT_TELEMETRY_HOST = 'ws://localhost:8000/feed';
 
-
 class Client {
   constructor(cfg) {
     this.cfg = cfg;
@@ -46,6 +46,7 @@ class Client {
       connectionTimeout: 1000,
       maxRetries: 10,
     };
+    
     this.address = cfg.telemetry_host || DEFAULT_TELEMETRY_HOST;
     this.socket = new ReconnectingWebSocket(this.address, [], options);
     this.timestamps = {};
@@ -57,6 +58,9 @@ class Client {
       this.socket.onopen = () => {
         console.log(`Conected to substrate-telemetry on ${this.address}`);
         this.cfg.subscribe.chains.forEach((chain) => {
+          nodesGauge(chain, "validator");
+          nodesGauge(chain, "passive");
+          nodesGauge(chain, "other");
           this._subscribe(chain);
         });
         resolve();
@@ -120,36 +124,33 @@ class Client {
       {
         const nodeID = payload[0];
         const nodeName = payload[1][0];
-
         const nodeIdent = `${this.currentSubscribedNetwork}_${nodeID}`
+        const nodeType = this.getNodeType(this.currentSubscribedNetwork, nodeName);
 
         if (!this.nodes[nodeIdent]) {
-          nodesGauge(this.currentSubscribedNetwork, 'validator').inc();
-          this.nodes[nodeIdent] = {
-            network: this.currentSubscribedNetwork,
-            name: nodeName
-          };
+          nodesGauge(this.currentSubscribedNetwork, nodeType).inc();
+          this.nodes[nodeIdent] = nodeName;
         }
 
-        console.log(`New node ${nodeName} (${nodeIdent})`);
+        console.log(`New node ${nodeName} - ${nodeIdent} - ${nodeType}`);
       }
       break;
 
     case Actions.RemovedNode:
       {
         const nodeID = payload;
-        const nodeName = this.nodes[nodeID];
-
         const nodeIdent = `${this.currentSubscribedNetwork}_${nodeID}`
+        const nodeName = this.nodes[nodeIdent];
+        const nodeType = this.getNodeType(this.currentSubscribedNetwork, nodeName);
 
         console.log(`Removed Node Payload: ${JSON.stringify(payload)}`);
 
         if (this.nodes[nodeIdent]) {
-          nodesGauge(this.currentSubscribedNetwork, 'validator').dec();
+          nodesGauge(this.currentSubscribedNetwork, nodeType).dec();
           delete this.nodes[nodeIdent];
         }
 
-        console.log(`Node '${nodeIdent}' '${nodeName} departed`);
+        console.log(`Node ${nodeIdent} - ${nodeName} - ${nodeType} departed`);
       }
       break;
 /*
@@ -220,6 +221,16 @@ class Client {
       this.socket.send(`send-finality:${chain}`);
       console.log('Requested finality data');
     }
+  }
+
+  getNodeType(chain, nodeName) {
+    if (nodeName.includes(this.cfg[chain.toLowerCase()].active_node_pattern)) {
+      return "validator"
+    }
+    if (nodeName.includes(this.cfg[chain.toLowerCase()].passive_node_pattern)) {
+      return "passive"
+    } 
+    return "other"
   }
 }
 
