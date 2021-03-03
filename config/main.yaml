@@ -1,4 +1,5 @@
 telemetry_host: ws://xxxxx:8000/feed
+inactive_node_time: 10
 subscribe:
   chains:
   - Polkadot

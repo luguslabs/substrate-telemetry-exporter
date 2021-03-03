@@ -1,59 +1,74 @@
 const { register } = require('prom-client');
 const promClient = require('prom-client');
+const debug = require('debug')('prometheus');
 
-const gauges = {};
+class Prometheus {
+  constructor(app) {
+    this.app = app;
+    this.chains = new Map();
+    this.gauges = new Map();
+  }
 
-module.exports = {
-  startCollection: () =>{
+  startMetricsRoute() {
     console.log('Starting the collection of metrics, the metrics are available on /metrics');
-    //promClient.collectDefaultMetrics();
-  },
 
-  injectMetricsRoute: (app) => {
-    app.get('/metrics', (req, res) => {
+    this.app.get('/metrics', (req, res) => {
+      this.calculateMetrics();
       res.set('Content-Type', register.contentType);
       res.end(register.metrics());
     });
-  },
 
-  nodesGauge: (network, type) => {
+  }
+
+  addChain(name, chainClient) {
+    console.log(`Added network ${name} to Prometheus Exporter!`);
+
+    this.chains.set(name, chainClient);
+    
+    this.nodesGauge(name, 'validator');
+    this.nodesGauge(name, 'passive');
+    this.nodesGauge(name, 'other');
+
+  }
+
+  nodesGauge(network, type) {
     const gaugeName = `${network.toLowerCase()}_${type}_nodes`;
-    if (gauges[gaugeName]) {
-      return gauges[gaugeName];
+    if (this.gauges.get(gaugeName)) {
+      return this.gauges.get(gaugeName);
     } else {
-      gauges[gaugeName] = new promClient.Gauge({
+      this.gauges.set(gaugeName, new promClient.Gauge({
         name: gaugeName,
         help: `Total number of ${type} nodes available on the ${network} network`
-      });
-      return gauges[gaugeName];
+      }));
+      return this.gauges.get(gaugeName);
     }
-  },
-/*
-  timeToFinality: new promClient.Histogram({
-    name: 'polkadot_block_finality_seconds',
-    help: 'Time from block production to block finalized',
-    buckets: [10, 14, 18, 22, 26, 30]
-  }),
+  }
 
-  bestBlock: new promClient.Gauge({
-    name: 'polkadot_best_block',
-    help: 'Maximum height of the chain'
-  }),
+  calculateMetrics(){
+    this.chains.forEach((chain, chainName) => {
+      const counters = new Map();
 
-  bestFinalized: new promClient.Gauge({
-    name: 'polkadot_best_finalized',
-    help: 'Highest finalized block'
-  }),
+      chain.nodes.forEach((node) => {
 
-  blockProductionTime: new promClient.Histogram({
-    name: 'polkadot_block_production_seconds',
-    help: 'Time to produce a block as reported by telemetry'
-  }),
+        debug('calculateMetrics', `At Chain ${chainName} Found node ${node}`);
 
-  blockPropagationTime: new promClient.Histogram({
-    name: 'polkadot_block_propagation_seconds',
-    help: 'Time to receive a block as reported by telemetry',
-    labelNames: ['node']
-  }),
-*/
+        if (!counters.get(node.getNodeType())) {
+          counters.set(node.getNodeType(), 0);
+        }
+
+        if (node.isNodeAlive()) {
+          counters.set(node.getNodeType(), counters.get(node.getNodeType()) + 1);
+        } 
+      });
+
+      counters.forEach((counter, nodeType) => {
+        this.nodesGauge(chainName, nodeType).set(counter);
+      });
+
+    });
+  }
+}
+
+module.exports = {
+  Prometheus
 }

@@ -1,14 +1,8 @@
 const ReconnectingWebSocket = require('reconnecting-websocket');
 const WS = require('ws');
+const debug = require('debug')('client');
 
-const { 
-        nodesGauge,
-      //  timeToFinality,
-      //  bestBlock,
-      //  bestFinalized,
-      //  blockProductionTime,
-      //  blockPropagationTime,
-      } = require('./prometheus');
+const { Node } = require('./node');
 
 const Actions = {
   FeedVersion      : 0,
@@ -30,55 +24,55 @@ const Actions = {
   AfgFinalized         : 16,
   AfgReceivedPrevote   : 17,
   AfgReceivedPrecommit : 18,
-  AfgAuthoritySet      : 19
+  AfgAuthoritySet      : 19,
+  StaleNode            : 20,
+  NodeIO               : 21,
+
 };
 
-const DEFAULT_TELEMETRY_HOST = 'ws://localhost:8000/feed';
-
 class Client {
-  constructor(cfg) {
-    this.cfg = cfg;
-
-    this.currentSubscribedNetwork = "";
+  constructor(telemetryHost, chain, patterns, inactiveNodeTime) {
 
     const options = {
-      WebSocket: WS, // custom WebSocket constructor
+      WebSocket: WS,
       connectionTimeout: 1000,
       maxRetries: 10,
     };
     
-    this.address = cfg.telemetry_host || DEFAULT_TELEMETRY_HOST;
+    this.address = telemetryHost;
     this.socket = new ReconnectingWebSocket(this.address, [], options);
     this.timestamps = {};
-    this.nodes = {};
+
+    this.nodes = new Map();
+    this.chains = new Map();
+    this.chain = chain;
+    this.patterns = patterns;
+    this.inactiveNodeTime = inactiveNodeTime;
   }
 
   start() {
+
     return new Promise((resolve, reject) => {
       this.socket.onopen = () => {
-        console.log(`Conected to substrate-telemetry on ${this.address}`);
-        this.cfg.subscribe.chains.forEach((chain) => {
-          nodesGauge(chain, "validator");
-          nodesGauge(chain, "passive");
-          nodesGauge(chain, "other");
-          this._subscribe(chain);
-        });
+        console.log(`Conected to substrate-telemetry on ${this.address} for chain ${this.chain}`);
+        this._subscribe(this.chain);
         resolve();
       };
 
       this.socket.onclose = () => {
-        console.log(`Conection to substrate-telemetry on ${this.address} closed`);
+        console.log(`Conection to substrate-telemetry on ${this.address} closed for chain ${this.chain}`);
         reject();
       };
 
       this.socket.onerror = (err) => {
-        console.log(`Could not connect to substrate-telemetry on ${this.address}: ${err}`);
+        console.log(`Could not connect to substrate-telemetry on ${this.address}: ${err} for chain ${this.chain}`);
         reject();
       };
 
       this.socket.onmessage = (data) => {
         const currentTimestamp = Date.now();
         const messages = this._deserialize(data);
+        
         for (let count = 0; count < messages.length; count++) {
           this._handle(messages[count], currentTimestamp);
         }
@@ -89,7 +83,7 @@ class Client {
   _deserialize(msg) {
     const data = JSON.parse(msg.data);
 
-    //console.log(`JSON data ${JSON.stringify(data)}`);
+    debug('_deserialize',`JSON data ${JSON.stringify(data)}`);
 
     const messages = new Array(data.length / 2);
 
@@ -106,132 +100,182 @@ class Client {
 
     switch(action) {
 
-    case Actions.SubscribedTo:
-      {
-        const network = payload;
-        this.currentSubscribedNetwork = network;
-        console.log(`Listening for network ${network}`);
-      }
-      break;
     case Actions.AddedChain:
       {
-        const chain = payload[0];
-        this._subscribe(chain);
+        const [label, nodeCount] = payload;
+        const chain = this.chains.get(label);
+
+        if (chain) {
+          chain.nodeCount = nodeCount;
+        } else {
+          this.chains.set(label, { label, nodeCount });
+        }
+
+        debug('_handle',`Added Chain ${payload}`);
+      }
+      break;
+
+    case Actions.RemovedChain:
+      {
+        this.chains.delete(payload);
+        
+        debug('_handle',`Removed Chain ${payload}`);
+      }
+      break;
+
+    case Actions.SubscribedTo:
+      {
+        this.nodes.clear();
+
+        const network = payload;
+        console.log(`Listening for network ${network}`);
+
+        debug('_handle',`SubscribedTo ${payload}`);
       }
       break;
 
     case Actions.AddedNode:
       {
-        const nodeID = payload[0];
-        const nodeName = payload[1][0];
-        const nodeIdent = `${this.currentSubscribedNetwork}_${nodeID}`
-        const nodeType = this.getNodeType(this.currentSubscribedNetwork, nodeName);
 
-        if (!this.nodes[nodeIdent]) {
-          nodesGauge(this.currentSubscribedNetwork, nodeType).inc();
-          this.nodes[nodeIdent] = nodeName;
-        }
+        const [
+          id,
+          nodeDetails,
+          nodeStats,
+          nodeIO,
+          nodeHardware,
+          blockDetails,
+          location,
+          startupTime,
+        ] = payload;
 
-        console.log(`New node ${nodeName} - ${nodeIdent} - ${nodeType}`);
+        const node = new Node(
+          id,
+          nodeDetails,
+          nodeStats,
+          nodeIO,
+          nodeHardware,
+          blockDetails,
+          location,
+          startupTime,
+          this.patterns,
+          this.inactiveNodeTime
+        );
+
+        this.nodes.set(id, node);
+        
+        console.log(`New node added to chain ${this.chain} with ID: ${id}`);
+
+        debug('_handle',`Added Node ${payload}`);
       }
       break;
 
     case Actions.RemovedNode:
       {
-        const nodeID = payload;
-        const nodeIdent = `${this.currentSubscribedNetwork}_${nodeID}`
-        const nodeName = this.nodes[nodeIdent];
-        const nodeType = this.getNodeType(this.currentSubscribedNetwork, nodeName);
 
-        console.log(`Removed Node Payload: ${JSON.stringify(payload)}`);
+        const id = payload;
 
-        if (this.nodes[nodeIdent]) {
-          nodesGauge(this.currentSubscribedNetwork, nodeType).dec();
-          delete this.nodes[nodeIdent];
+        if (this.nodes.get(id)) {
+          this.nodes.delete(id);
+          console.log(`Node ${id} departed`);
+        } else {
+          console.log(`Error! Removed Node doesn't exist!`);
         }
 
-        console.log(`Node ${nodeIdent} - ${nodeName} - ${nodeType} departed`);
+        debug('_handle',`Removed Node ${payload}`);
       }
       break;
-/*
-    case Actions.BestBlock:
+
+    case Actions.StaleNode: 
       {
-        const blockNumber = payload[0];
+        const id = payload;
 
-        bestBlock.set(blockNumber);
+        this.nodes.get(id).setStale(true);
 
-        const productionTime = payload[1];
-        blockProductionTime.observe(productionTime);
+        console.log(`Stale Node at chain ${this.chain} with id ${id}`);
 
-        this.timestamps[blockNumber] = productionTime;
-
-        console.log(`New best block ${blockNumber}`);
+        debug('_handle',`Stale Node ${payload}`);
       }
       break;
 
-    case Actions.ImportedBlock:
+    case Actions.LocatedNode: 
       {
-        const blockNumber = payload[1][0];
-        const nodeID = payload[0];
-        const node = this.nodes[nodeID];
+        const [id, lat, lon, city] = payload;
 
-        const propagationTime = payload[1][4] / 1000;
-        blockPropagationTime.observe({ node }, propagationTime);
-        console.log(`propagationTime at node ${nodeID} : ${propagationTime}`);
-        console.log(`Block ${blockNumber} imported at node ${nodeID}`);
+        this.nodes.get(id).updateLocation([lat, lon, city]);
+
+        console.log(`Located Node at chain ${this.chain} with id ${id}`);
+
+        debug('_handle',`Located Node ${payload}`);
       }
       break;
 
-    case Actions.FinalizedBlock:
+    case Actions.ImportedBlock: 
       {
-        const blockNumber = payload[1];
+        const [id, blockDetails] = payload;
 
-        console.log(`New finalized block ${blockNumber}`)
+        this.nodes.get(id).updateBlock(blockDetails);
+
+        console.log(`Imported block at chain ${this.chain}`);
+
+        debug('_handle',`Imported Block ${payload}`);
       }
       break;
 
-    case Actions.BestFinalized:
+    case Actions.FinalizedBlock: 
       {
-        const blockNumber = payload[0];
+        const [id, height, hash] = payload;
 
-        bestFinalized.set(blockNumber);
+        this.nodes.get(id).updateFinalized(height, hash);
 
-        const productionTime = this.timestamps[blockNumber];
+        console.log(`Finalied block at chain ${this.chain} with id ${height}`);
 
-        if (productionTime) {
-          const finalityTime = (currentTimestamp - productionTime) / 1000;
-          console.log(`finality time for ${blockNumber}: ${finalityTime}`)
-          timeToFinality.observe(finalityTime);
-
-          delete this.timestamps[blockNumber];
-        }
-
-        console.log(`New best finalized block ${blockNumber}`)
+        debug('_handle',`Finalized Block ${payload}`);
       }
       break;
-*/
+
+    case Actions.NodeStats: 
+      {
+        const [id, nodeStats] = payload;
+
+        this.nodes.get(id).updateStats(nodeStats);
+
+        console.log(`Node stats at chain ${this.chain} with id ${id}`);
+
+        debug('_handle',`Node Stats ${payload}`);
+      }
+      break;
+
+    case Actions.NodeHardware: 
+      {
+        const [id, nodeHardware] = payload;
+
+        this.nodes.get(id).updateHardware(nodeHardware);
+
+        console.log(`Node hardware at chain ${this.chain} with id ${id}`);
+
+        debug('_handle',`Node Hardware ${payload}`);
+      }
+      break;
+
+    case Actions.NodeIO: 
+    {
+        const [id, nodeIO] = payload;
+
+        this.nodes.get(id).updateIO(nodeIO);
+
+        console.log(`Node IO at chain ${this.chain} with id ${id}`);
+
+        debug('_handle',`NodeIO ${payload}`);
+      }
+      break;
     }
   }
 
   _subscribe(chain) {
-    if(this.cfg.subscribe.chains.includes(chain)) {
-      this.socket.send(`subscribe:${chain}`);
-      console.log(`Subscribed to chain '${chain}'`);
-
-      this.socket.send(`send-finality:${chain}`);
-      console.log('Requested finality data');
-    }
+    this.socket.send(`subscribe:${chain}`);
+    console.log(`Subscribed to chain '${chain}'`);
   }
 
-  getNodeType(chain, nodeName) {
-    if (nodeName.includes(this.cfg[chain.toLowerCase()].active_node_pattern)) {
-      return "validator"
-    }
-    if (nodeName.includes(this.cfg[chain.toLowerCase()].passive_node_pattern)) {
-      return "passive"
-    } 
-    return "other"
-  }
 }
 
 module.exports = {
