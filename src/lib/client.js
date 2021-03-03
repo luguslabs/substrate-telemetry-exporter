@@ -118,7 +118,7 @@ class Client {
     case Actions.RemovedChain:
       {
         this.chains.delete(payload);
-        
+
         debug('_handle',`Removed Chain ${payload}`);
       }
       break;
@@ -177,8 +177,6 @@ class Client {
         if (this.nodes.get(id)) {
           this.nodes.delete(id);
           console.log(`Node ${id} departed`);
-        } else {
-          console.log(`Error! Removed Node doesn't exist!`);
         }
 
         debug('_handle',`Removed Node ${payload}`);
@@ -191,7 +189,7 @@ class Client {
 
         this.nodes.get(id).setStale(true);
 
-        console.log(`Stale Node at chain ${this.chain} with id ${id}`);
+        console.log(`StaleNode recieved on the chain ${this.chain} with id ${id}`);
 
         debug('_handle',`Stale Node ${payload}`);
       }
@@ -203,7 +201,7 @@ class Client {
 
         this.nodes.get(id).updateLocation([lat, lon, city]);
 
-        console.log(`Located Node at chain ${this.chain} with id ${id}`);
+        console.log(`LocatedNode recieved on the chain ${this.chain} with id ${id}`);
 
         debug('_handle',`Located Node ${payload}`);
       }
@@ -215,7 +213,7 @@ class Client {
 
         this.nodes.get(id).updateBlock(blockDetails);
 
-        console.log(`Imported block at chain ${this.chain}`);
+        console.log(`ImportedBlock on the chain ${this.chain}`);
 
         debug('_handle',`Imported Block ${payload}`);
       }
@@ -227,7 +225,7 @@ class Client {
 
         this.nodes.get(id).updateFinalized(height, hash);
 
-        console.log(`Finalied block at chain ${this.chain} with id ${height}`);
+        console.log(`FinalizedBlock on the chain ${this.chain} with number ${height}`);
 
         debug('_handle',`Finalized Block ${payload}`);
       }
@@ -239,7 +237,7 @@ class Client {
 
         this.nodes.get(id).updateStats(nodeStats);
 
-        console.log(`Node stats at chain ${this.chain} with id ${id}`);
+        console.log(`NodeStats recieved on the chain ${this.chain} with id ${id}`);
 
         debug('_handle',`Node Stats ${payload}`);
       }
@@ -251,7 +249,7 @@ class Client {
 
         this.nodes.get(id).updateHardware(nodeHardware);
 
-        console.log(`Node hardware at chain ${this.chain} with id ${id}`);
+        console.log(`NodeHardware recieved on the chain ${this.chain} with id ${id}`);
 
         debug('_handle',`Node Hardware ${payload}`);
       }
@@ -263,7 +261,7 @@ class Client {
 
         this.nodes.get(id).updateIO(nodeIO);
 
-        console.log(`Node IO at chain ${this.chain} with id ${id}`);
+        console.log(`NodeIO recieved on the chain ${this.chain} with id ${id}`);
 
         debug('_handle',`NodeIO ${payload}`);
       }

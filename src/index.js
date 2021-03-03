@@ -15,10 +15,12 @@ program
 
 async function start(options={}) {
 
+  // Setting up Prometheus Exporter
   const prometheus = new Prometheus(app);
   prometheus.startMetricsRoute();
   app.listen(port, () => console.log(`substrate-telemetry-exporter listening on port ${port}`))
 
+  // Setting up Chain Listeners
   const cfg = readYAML(options.config);
   cfg.subscribe.chains.forEach(async (chain) => {
     const patterns = {
