@@ -31,38 +31,45 @@ class Prometheus {
 
   }
 
+  addEventTimeGauge(chainName) {
+    if (!this.gauges.get(`${chainName}_time_from_last_event`)) {
+      this.gauges.set(`${chainName}_time_from_last_event`, new promClient.Gauge({
+        name: `${chainName}_time_from_last_event`,
+        help: `Time passed from last event on ${chainName} network`
+      }));
+    }
+    return this.gauges.get(`${chainName}_time_from_last_event`);
+  }
+
   addLabeledGauge(type, name) {
-    if (this.gauges.get(type)) {
-      return this.gauges.get(type).labels(name);
-    } else {
+    if (!this.gauges.get(type)) {
       this.gauges.set(type, new promClient.Gauge({
         name: type,
         help: `nodes number`,
         labelNames: ['name'],
       }));
-      return this.gauges.get(type).labels(name);
     }
+    return this.gauges.get(type).labels(name);
   }
 
   nodesGauge(network, type) {
     const gaugeName = `${network.toLowerCase()}_${type}_nodes`;
-
-    if (this.gauges.get(gaugeName)) {
-      return this.gauges.get(gaugeName);
-    } else {
+    if (!this.gauges.get(gaugeName)) {
       this.gauges.set(gaugeName, new promClient.Gauge({
         name: gaugeName,
         help: `Total number of ${type} nodes available on the ${network} network`
       }));
-      return this.gauges.get(gaugeName);
     }
+    return this.gauges.get(gaugeName);
   }
 
   calculateMetrics(){
-    
     this.chains.forEach((chain, chainName) => {
       const nodesCounters = new Map();
       const counters = new Map();
+
+      const timeElapsedFromLastEvent = Date.now() - chain.lastEvent;
+      this.addEventTimeGauge(chainName.toLowerCase()).set(timeElapsedFromLastEvent);
 
       chain.nodes.forEach((node) => {
 

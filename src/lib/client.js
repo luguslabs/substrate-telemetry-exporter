@@ -48,6 +48,7 @@ class Client {
     this.chain = chain;
     this.patterns = patterns;
     this.inactiveNodeTime = inactiveNodeTime;
+    this.lastEvent = Date.now();
   }
 
   start() {
@@ -97,6 +98,8 @@ class Client {
 
   _handle(message, currentTimestamp) {
     const { action, payload } = message;
+
+    this.lastEvent = Date.now();
 
     switch(action) {
 
