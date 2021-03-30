@@ -31,8 +31,22 @@ class Prometheus {
 
   }
 
+  addLabeledGauge(type, name) {
+    if (this.gauges.get(type)) {
+      return this.gauges.get(type).labels(name);
+    } else {
+      this.gauges.set(type, new promClient.Gauge({
+        name: type,
+        help: `nodes number`,
+        labelNames: ['name'],
+      }));
+      return this.gauges.get(type).labels(name);
+    }
+  }
+
   nodesGauge(network, type) {
     const gaugeName = `${network.toLowerCase()}_${type}_nodes`;
+
     if (this.gauges.get(gaugeName)) {
       return this.gauges.get(gaugeName);
     } else {
@@ -45,7 +59,9 @@ class Prometheus {
   }
 
   calculateMetrics(){
+    
     this.chains.forEach((chain, chainName) => {
+      const nodesCounters = new Map();
       const counters = new Map();
 
       chain.nodes.forEach((node) => {
@@ -56,9 +72,19 @@ class Prometheus {
           counters.set(node.getNodeType(), 0);
         }
 
+        if (!nodesCounters.get(node.name)) {
+          nodesCounters.set(node.name, { type: node.getNodeType(), counter: 0});
+        }
+
         if (node.isNodeAlive()) {
+          nodesCounters.set(node.name, { type: node.getNodeType(), counter: nodesCounters.get(node.name).counter + 1});
           counters.set(node.getNodeType(), counters.get(node.getNodeType()) + 1);
-        } 
+        }
+
+      });
+
+      nodesCounters.forEach(({counter, type}, nodeName) => {
+        this.addLabeledGauge(type, nodeName).set(counter);
       });
 
       counters.forEach((counter, nodeType) => {

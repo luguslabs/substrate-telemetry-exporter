@@ -189,7 +189,7 @@ class Client {
 
         this.nodes.get(id).setStale(true);
 
-        console.log(`StaleNode recieved on the chain ${this.chain} with id ${id}`);
+        //console.log(`StaleNode recieved on the chain ${this.chain} with id ${id}`);
 
         debug('_handle',`Stale Node ${payload}`);
       }
@@ -201,7 +201,7 @@ class Client {
 
         this.nodes.get(id).updateLocation([lat, lon, city]);
 
-        console.log(`LocatedNode recieved on the chain ${this.chain} with id ${id}`);
+        //console.log(`LocatedNode recieved on the chain ${this.chain} with id ${id}`);
 
         debug('_handle',`Located Node ${payload}`);
       }
@@ -213,7 +213,7 @@ class Client {
 
         this.nodes.get(id).updateBlock(blockDetails);
 
-        console.log(`ImportedBlock on the chain ${this.chain}`);
+        //console.log(`ImportedBlock on the chain ${this.chain}`);
 
         debug('_handle',`Imported Block ${payload}`);
       }
@@ -225,7 +225,7 @@ class Client {
 
         this.nodes.get(id).updateFinalized(height, hash);
 
-        console.log(`FinalizedBlock on the chain ${this.chain} with number ${height}`);
+        //console.log(`FinalizedBlock on the chain ${this.chain} with number ${height}`);
 
         debug('_handle',`Finalized Block ${payload}`);
       }
@@ -237,7 +237,7 @@ class Client {
 
         this.nodes.get(id).updateStats(nodeStats);
 
-        console.log(`NodeStats recieved on the chain ${this.chain} with id ${id}`);
+        //console.log(`NodeStats recieved on the chain ${this.chain} with id ${id}`);
 
         debug('_handle',`Node Stats ${payload}`);
       }
@@ -249,7 +249,7 @@ class Client {
 
         this.nodes.get(id).updateHardware(nodeHardware);
 
-        console.log(`NodeHardware recieved on the chain ${this.chain} with id ${id}`);
+        //console.log(`NodeHardware recieved on the chain ${this.chain} with id ${id}`);
 
         debug('_handle',`Node Hardware ${payload}`);
       }
@@ -261,7 +261,7 @@ class Client {
 
         this.nodes.get(id).updateIO(nodeIO);
 
-        console.log(`NodeIO recieved on the chain ${this.chain} with id ${id}`);
+        //console.log(`NodeIO recieved on the chain ${this.chain} with id ${id}`);
 
         debug('_handle',`NodeIO ${payload}`);
       }
